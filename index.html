@@ -318,9 +318,13 @@ function renderCreatives(acc,month){
     const color=COLORS[acct]||'#888';
     const status=roas>=3.5?'top':roas>=2.5?'bueno':roas>=1.5?'regular':'bajo';
     const pc={top:'pill-green',bueno:'pill-green',regular:'pill-amber',bajo:'pill-red'}[status];
-    const img=thumb.startsWith('http')
-      ?'<img class="creative-thumb" src="'+thumb+'" alt="ad" onerror="this.outerHTML=\'<div class=creative-placeholder>sin imagen</div>\'">'
-      :'<div class="creative-placeholder">sin thumbnail</div>';
+    const isVideo=thumb.startsWith('video:');
+    const videoId=isVideo?thumb.replace('video:',''):'';
+    const img=isVideo
+      ?'<div style="width:100%;aspect-ratio:1/1;background:#111;overflow:hidden"><iframe src="https://www.facebook.com/plugins/video.php?href=https%3A%2F%2Fwww.facebook.com%2Fvideo%2Fembed%3Fvideo_id%3D'+videoId+'&show_text=false&mute=true" style="width:100%;height:100%;border:none" allowfullscreen allow="autoplay;clipboard-write;encrypted-media;picture-in-picture"></iframe></div>'
+      :thumb.startsWith('http')
+        ?'<img class="creative-thumb" src="'+thumb+'" alt="ad" onerror="this.outerHTML=\'<div class=creative-placeholder>sin imagen</div>\'">'
+        :'<div class="creative-placeholder">sin thumbnail</div>';
     return '<div class="creative-card">'+img+
       '<div class="creative-body">'+
       '<div class="acct-tag" style="background:'+color+'18;color:'+color+'">'+acct+'</div>'+
