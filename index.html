@@ -53,8 +53,8 @@ input[type=number]{font-size:13px;padding:6px 10px;border-radius:8px;border:1px 
 
 .creatives-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-bottom:2rem}
 .creative-card{background:#fff;border:1px solid #e8e8e5;border-radius:12px;overflow:hidden}
-.creative-thumb{width:100%;aspect-ratio:4/3;object-fit:cover;display:block;background:#f0f0ee}
-.creative-placeholder{width:100%;aspect-ratio:4/3;background:#f0f0ee;display:flex;align-items:center;justify-content:center;color:#bbb;font-size:11px}
+.creative-thumb{width:100%;aspect-ratio:1/1;object-fit:contain;display:block;background:#f0f0ee}
+.creative-placeholder{width:100%;aspect-ratio:1/1;background:#f0f0ee;display:flex;align-items:center;justify-content:center;color:#bbb;font-size:11px}
 .creative-body{padding:.85rem}
 .acct-tag{display:inline-block;font-size:10px;padding:2px 7px;border-radius:99px;margin-bottom:6px;font-weight:500}
 .creative-name{font-size:12px;font-weight:500;margin-bottom:8px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:2.7em}
@@ -242,11 +242,12 @@ function render(){
   const progressBar=(fill,color)=>'<div class="progress-bar"><div class="progress-fill" style="width:'+Math.min(fill*100,100)+'%;background:'+color+'"></div></div>';
 
   document.getElementById('kpiGrid').innerHTML=
-    '<div class="kpi"><div class="kpi-label">Spend del mes</div><div class="kpi-value">'+fmt(spend)+'</div><div class="kpi-sub">'+(isNow?'Proyectado: '+fmt(proj):'Mes cerrado')+'</div>'+delta(spend,pSpend,false)+
-    (budget>0?'<div class="progress-wrap"><div class="progress-labels"><span>'+pct(bp)+' del budget</span><span>'+fmt(budget)+'</span></div>'+progressBar(bp,color)+progressBar(pp,proj>budget?'#A32D2D40':color+'40')+'</div>':'')+'</div>'+
+    '<div class="kpi"><div class="kpi-label">Spend del mes</div><div class="kpi-value">'+fmt(spend)+'</div><div class="kpi-sub">'+(isNow?dom+'d transcurridos':'Mes cerrado')+'</div>'+
+    (budget>0?'<div class="progress-wrap"><div class="progress-labels"><span>'+pct(bp)+' del budget</span><span>'+fmt(budget)+'</span></div>'+progressBar(bp,color)+'</div>':'')+'</div>'+
+    '<div class="kpi"><div class="kpi-label">Proyectado fin de mes</div><div class="kpi-value">'+fmt(proj)+'</div><div class="kpi-sub">'+(budget>0?pct(pp)+' del budget · ritmo '+dom+'d':'Basado en ritmo actual')+'</div>'+delta(proj,pSpend,false)+
+    (budget>0?'<div class="progress-wrap">'+progressBar(pp,proj>budget?'#A32D2D':color)+'</div>':'')+'</div>'+
     '<div class="kpi"><div class="kpi-label">ROAS</div><div class="kpi-value">'+roas.toFixed(2)+'x</div><div class="kpi-sub">'+fmt(cv)+' conv. value</div>'+delta(roas,pRoas,false)+'</div>'+
-    '<div class="kpi"><div class="kpi-label">CPA</div><div class="kpi-value">'+(cpa>0?fmt(cpa):'—')+'</div><div class="kpi-sub">'+Math.round(purch)+' compras</div>'+delta(cpa,pCpa,true)+'</div>'+
-    '<div class="kpi"><div class="kpi-label">Conv. value</div><div class="kpi-value">'+fmt(cv)+'</div><div class="kpi-sub">'+Math.round(purch)+' compras</div>'+delta(cv,pCv,false)+'</div>';
+    '<div class="kpi"><div class="kpi-label">CPA</div><div class="kpi-value">'+(cpa>0?fmt(cpa):'—')+'</div><div class="kpi-sub">'+Math.round(purch)+' compras</div>'+delta(cpa,pCpa,true)+'</div>';
 
   renderCharts(acc,month);
   renderCreatives(acc,month);
