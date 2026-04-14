@@ -538,8 +538,7 @@ function sumField(rows, idx) { return rows.reduce((s,r) => s + parseNum(r[idx]),
 
 // ─── KPIs ─────────────────────────────────────────────────────────────────
 function renderKPIs() {
-  const {from, to} = getFilters();
-  const gran = document.getElementById('selGranularity').value === 'week' ? 'Diario' : 'Diario';
+  const {from, to, acc} = getFilters();
 
   const curr = filterResumen('Diario');
   const spend = sumField(curr, R.SPEND);
@@ -558,7 +557,6 @@ function renderKPIs() {
   const range = (to && from) ? (to - from) : 30*24*3600*1000;
   const prevTo   = from ? new Date(from.getTime() - 1) : null;
   const prevFrom = prevTo ? new Date(prevTo.getTime() - range) : null;
-  const {acc} = getFilters();
 
   const prevRows = prevFrom ? resumenData.filter(r => {
     if (acc !== 'all' && r[R.ACCOUNT] !== acc) return false;
@@ -598,9 +596,8 @@ function renderKPIs() {
   ];
 
   // Show clearly what period is being displayed
-  const {from: f, to: t, acc} = getFilters();
-  const periodLabel = (f && t)
-    ? `${f.toLocaleDateString('es-AR',{day:'2-digit',month:'short',year:'numeric'})} → ${t.toLocaleDateString('es-AR',{day:'2-digit',month:'short',year:'numeric'})}`
+  const periodLabel = (from && to)
+    ? `${from.toLocaleDateString('es-AR',{day:'2-digit',month:'short',year:'numeric'})} → ${to.toLocaleDateString('es-AR',{day:'2-digit',month:'short',year:'numeric'})}`
     : 'Período completo';
   const acctLabel = acc === 'all' ? 'Todas las cuentas' : acc;
   document.getElementById('kpiTitle').textContent = `KPIs · ${acctLabel} · ${periodLabel}`;
