@@ -14,7 +14,926 @@ h1{font-size:20px;font-weight:500}
 select,button{font-size:13px;padding:6px 12px;border-radius:8px;border:1px solid #ddd;background:#fff;height:34px;cursor:pointer}
 button:hover{background:#f0f0ee}
 input[type=number]{font-size:13px;padding:6px 10px;border-radius:8px;border:1px solid #ddd;background:#fff;height:34px;width:110px;color:#1a1a1a}
-.last-update{font-size:11px;color:#aaa;display:block;margin-bottom:1rem}
+.last-update{font-size:11px;color:#aaa;display:block;margin-bottom:1rem}<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ALAC Performance Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #f4f5f7;
+    --surface: #ffffff;
+    --border: #e2e6ea;
+    --primary: #2563eb;
+    --primary-light: #eff6ff;
+    --green: #16a34a;
+    --green-bg: #f0fdf4;
+    --red: #dc2626;
+    --red-bg: #fef2f2;
+    --amber: #d97706;
+    --amber-bg: #fffbeb;
+    --text: #111827;
+    --muted: #6b7280;
+    --small: #9ca3af;
+    --radius: 12px;
+    --shadow: 0 1px 4px rgba(0,0,0,.08);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+  /* Header */
+  header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+  .logo { font-size: 16px; font-weight: 700; color: var(--text); letter-spacing: -.3px; }
+  .logo span { color: var(--primary); }
+  .controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  select, input[type=date], button { height: 36px; border: 1px solid var(--border); border-radius: 8px; padding: 0 12px; font-size: 13px; background: var(--surface); color: var(--text); cursor: pointer; outline: none; }
+  select:focus, input[type=date]:focus { border-color: var(--primary); }
+  .btn-refresh { background: var(--primary); color: white; border: none; font-weight: 600; display: flex; align-items: center; gap: 6px; padding: 0 14px; }
+  .btn-refresh:hover { background: #1d4ed8; }
+  .date-sep { color: var(--muted); font-size: 13px; }
+
+  /* Status bar */
+  .status-bar { background: var(--primary-light); border-bottom: 1px solid #bfdbfe; padding: 8px 24px; font-size: 12px; color: var(--primary); display: flex; align-items: center; gap: 8px; }
+  .status-bar.error { background: var(--red-bg); border-color: #fca5a5; color: var(--red); }
+  .status-bar.hidden { display: none; }
+
+  /* Budget bar */
+  .budget-strip { background: var(--surface); border-bottom: 1px solid var(--border); padding: 12px 24px; display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+  .budget-strip label { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; }
+  .budget-group { display: flex; align-items: center; gap: 8px; }
+  .budget-group span { font-size: 13px; color: var(--text); }
+  .budget-input { height: 32px; width: 120px; font-size: 13px; }
+
+  /* Layout */
+  main { padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
+  .section-title { font-size: 11px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; margin-bottom: 12px; margin-top: 24px; }
+  .section-title:first-child { margin-top: 0; }
+
+  /* KPI Grid */
+  .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+  .kpi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); }
+  .kpi-label { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
+  .kpi-value { font-size: 26px; font-weight: 700; color: var(--text); line-height: 1; }
+  .kpi-sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .kpi-delta { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; font-weight: 600; margin-top: 8px; padding: 2px 8px; border-radius: 20px; }
+  .delta-up { background: var(--green-bg); color: var(--green); }
+  .delta-down { background: var(--red-bg); color: var(--red); }
+  .delta-neutral { background: #f3f4f6; color: var(--muted); }
+
+  /* Projection bar */
+  .prog-bar { height: 6px; background: #e5e7eb; border-radius: 3px; margin-top: 10px; overflow: hidden; }
+  .prog-fill { height: 100%; border-radius: 3px; transition: width .6s; }
+  .prog-fill.safe { background: var(--green); }
+  .prog-fill.warn { background: var(--amber); }
+  .prog-fill.over { background: var(--red); }
+  .prog-label { font-size: 11px; color: var(--muted); margin-top: 4px; display: flex; justify-content: space-between; }
+
+  /* Funnel */
+  .funnel-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+  .funnel-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow); }
+  .funnel-title { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 16px; }
+  .funnel-step { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+  .funnel-bar-wrap { flex: 1; }
+  .funnel-bar { height: 28px; background: var(--primary); border-radius: 4px; display: flex; align-items: center; padding: 0 8px; color: white; font-size: 11px; font-weight: 600; white-space: nowrap; min-width: 40px; transition: width .6s; }
+  .funnel-label { width: 110px; font-size: 12px; color: var(--text); text-align: right; flex-shrink: 0; }
+  .funnel-pct { width: 44px; font-size: 11px; color: var(--muted); text-align: left; flex-shrink: 0; }
+  .funnel-step:nth-child(1) .funnel-bar { background: #3b82f6; }
+  .funnel-step:nth-child(2) .funnel-bar { background: #6366f1; }
+  .funnel-step:nth-child(3) .funnel-bar { background: #8b5cf6; }
+  .funnel-step:nth-child(4) .funnel-bar { background: #a855f7; }
+  .funnel-step:nth-child(5) .funnel-bar { background: #ec4899; }
+
+  /* Charts */
+  .chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 16px; }
+  .chart-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; box-shadow: var(--shadow); }
+  .chart-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .chart-title { font-size: 13px; font-weight: 700; color: var(--text); }
+  .chart-tabs { display: flex; gap: 2px; background: #f3f4f6; padding: 3px; border-radius: 7px; }
+  .chart-tab { font-size: 11px; padding: 4px 10px; border-radius: 5px; cursor: pointer; font-weight: 600; color: var(--muted); transition: all .15s; border: none; background: none; }
+  .chart-tab.active { background: white; color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.1); }
+  .chart-wrap { position: relative; height: 200px; }
+
+  /* Creative section */
+  .creative-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .creative-tabs { display: flex; gap: 2px; background: #f3f4f6; padding: 3px; border-radius: 7px; }
+  .creative-tab { font-size: 11px; padding: 4px 10px; border-radius: 5px; cursor: pointer; font-weight: 600; color: var(--muted); border: none; background: none; }
+  .creative-tab.active { background: white; color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.1); }
+  .creative-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; }
+  .creative-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); transition: transform .15s, box-shadow .15s; }
+  .creative-card:hover { transform: translateY(-2px); box-shadow: 0 4px 16px rgba(0,0,0,.12); }
+  .creative-img-wrap { position: relative; width: 100%; padding-top: 100%; background: #f3f4f6; overflow: hidden; }
+  .creative-img-wrap img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .creative-img-wrap .no-img { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: var(--small); }
+  .creative-img-wrap .no-img svg { width: 32px; height: 32px; opacity: .4; }
+  .creative-rank { position: absolute; top: 8px; left: 8px; background: rgba(0,0,0,.65); color: white; font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 20px; }
+  .creative-badge { position: absolute; top: 8px; right: 8px; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 20px; }
+  .badge-winner { background: #fef3c7; color: #92400e; }
+  .badge-scale { background: #d1fae5; color: #065f46; }
+  .badge-watch { background: #fee2e2; color: #991b1b; }
+  .creative-body { padding: 12px; }
+  .creative-name { font-size: 12px; font-weight: 600; color: var(--text); line-height: 1.4; margin-bottom: 10px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .creative-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .cm { }
+  .cm-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .3px; }
+  .cm-value { font-size: 13px; font-weight: 700; color: var(--text); }
+  .cm-value.good { color: var(--green); }
+  .cm-value.bad { color: var(--red); }
+  .creative-bar { height: 3px; background: #e5e7eb; border-radius: 2px; margin-top: 10px; }
+  .creative-bar-fill { height: 100%; border-radius: 2px; background: var(--primary); }
+
+  /* Table */
+  .table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); overflow: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { padding: 10px 14px; text-align: left; font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; background: #fafafa; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  td { padding: 11px 14px; border-bottom: 1px solid #f3f4f6; vertical-align: middle; white-space: nowrap; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--primary-light); }
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+  .pill-green { background: var(--green-bg); color: var(--green); }
+  .pill-red { background: var(--red-bg); color: var(--red); }
+  .pill-amber { background: var(--amber-bg); color: var(--amber); }
+  .pill-blue { background: var(--primary-light); color: var(--primary); }
+
+  /* Empty states */
+  .empty { padding: 40px; text-align: center; color: var(--muted); font-size: 13px; }
+
+  /* Spinner */
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner { width: 16px; height: 16px; border: 2px solid currentColor; border-top-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; display: inline-block; }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<header>
+  <div class="logo">ALAC <span>Dashboard</span></div>
+  <div class="controls">
+    <select id="selAccount">
+      <option value="all">Todas las cuentas</option>
+      <option value="ALAC USA">ALAC USA</option>
+      <option value="ALAC ARG">ALAC ARG</option>
+    </select>
+    <input type="date" id="dateFrom" title="Desde">
+    <span class="date-sep">→</span>
+    <input type="date" id="dateTo" title="Hasta">
+    <select id="selGranularity">
+      <option value="month">Vista mensual</option>
+      <option value="week">Vista semanal</option>
+    </select>
+    <button class="btn-refresh" onclick="loadAll()">
+      <span id="refreshIcon">↻</span> Actualizar
+    </button>
+  </div>
+</header>
+
+<!-- Status bar -->
+<div class="status-bar hidden" id="statusBar">
+  <span class="spinner" id="statusSpinner"></span>
+  <span id="statusText">Cargando datos...</span>
+</div>
+
+<!-- Budget strip -->
+<div class="budget-strip">
+  <label>Presupuesto mensual</label>
+  <div class="budget-group">
+    <span>🇺🇸 ALAC USA</span>
+    <input type="number" class="budget-input" id="budgetUSA" placeholder="0" min="0" step="100">
+    <span style="color:var(--muted);font-size:12px">USD/mes</span>
+  </div>
+  <div class="budget-group">
+    <span>🇦🇷 ALAC ARG</span>
+    <input type="number" class="budget-input" id="budgetARG" placeholder="0" min="0" step="1000">
+    <span style="color:var(--muted);font-size:12px">ARS/mes</span>
+  </div>
+</div>
+
+<main>
+  <!-- KPIs -->
+  <div class="section-title" id="kpiTitle">KPIs del período</div>
+  <div class="kpi-grid" id="kpiGrid">
+    <div class="kpi"><div class="kpi-label">Cargando</div><div class="kpi-value">—</div></div>
+  </div>
+
+  <!-- Projection cards -->
+  <div class="section-title">Proyección del mes actual</div>
+  <div class="kpi-grid" id="projGrid">
+    <div class="kpi"><div class="kpi-label">Cargando</div><div class="kpi-value">—</div></div>
+  </div>
+
+  <!-- Funnel -->
+  <div class="section-title">Embudo de conversión</div>
+  <div class="funnel-grid" id="funnelGrid">
+    <div class="kpi empty">Cargando...</div>
+  </div>
+
+  <!-- Charts -->
+  <div class="section-title">Evolución</div>
+  <div class="chart-grid">
+    <div class="chart-card">
+      <div class="chart-header">
+        <div class="chart-title">Spend</div>
+        <div class="chart-tabs">
+          <button class="chart-tab active" onclick="switchChartTab('spend','mensual',this)">Mensual</button>
+          <button class="chart-tab" onclick="switchChartTab('spend','semanal',this)">Semanal</button>
+        </div>
+      </div>
+      <div class="chart-wrap"><canvas id="spendChart"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-header">
+        <div class="chart-title">Conv. Value</div>
+        <div class="chart-tabs">
+          <button class="chart-tab active" onclick="switchChartTab('cv','mensual',this)">Mensual</button>
+          <button class="chart-tab" onclick="switchChartTab('cv','semanal',this)">Semanal</button>
+        </div>
+      </div>
+      <div class="chart-wrap"><canvas id="cvChart"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-header">
+        <div class="chart-title">ROAS</div>
+        <div class="chart-tabs">
+          <button class="chart-tab active" onclick="switchChartTab('roas','mensual',this)">Mensual</button>
+          <button class="chart-tab" onclick="switchChartTab('roas','semanal',this)">Semanal</button>
+        </div>
+      </div>
+      <div class="chart-wrap"><canvas id="roasChart"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-header">
+        <div class="chart-title">CPA</div>
+        <div class="chart-tabs">
+          <button class="chart-tab active" onclick="switchChartTab('cpa','mensual',this)">Mensual</button>
+          <button class="chart-tab" onclick="switchChartTab('cpa','semanal',this)">Semanal</button>
+        </div>
+      </div>
+      <div class="chart-wrap"><canvas id="cpaChart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Top Campaigns table -->
+  <div class="section-title">Top Campañas (período seleccionado)</div>
+  <div class="table-wrap" id="campaignTable">
+    <div class="empty">Cargando...</div>
+  </div>
+
+  <!-- Creativos -->
+  <div class="section-title">
+    <div class="creative-header">
+      <span>Top Creativos por Cuenta</span>
+      <div class="creative-tabs" id="creativeTabs">
+        <button class="creative-tab active" onclick="switchCreativeTab('all',this)">Todos</button>
+        <button class="creative-tab" onclick="switchCreativeTab('ALAC USA',this)">ALAC USA</button>
+        <button class="creative-tab" onclick="switchCreativeTab('ALAC ARG',this)">ALAC ARG</button>
+      </div>
+    </div>
+  </div>
+  <div class="creative-grid" id="creativeGrid">
+    <div class="kpi empty">Cargando creativos...</div>
+  </div>
+
+</main>
+
+<script>
+// ─── Config ────────────────────────────────────────────────────────────────
+const SHEET_ID     = '1vQjPucxH2e78xUbkPdPZlvrOOjskKF1kJ6OLbuC0dIw';
+const GID_RESUMEN  = '338217484';
+const GID_MONTHLY  = '1743417792';
+const GID_DAILY    = '106720323';
+
+// Column indices (0-based) for RESUMEN sheet
+const R = {
+  BM:0, ACCOUNT:1, DATE_START:2, DATE_STOP:3, GRAN:4,
+  SPEND:5, IMP:6, REACH:7, CPM:8, CTR:9,
+  CLICKS:10, ATC:11, COST_ATC:12,
+  CHECKOUT:13, COST_CHECKOUT:14,
+  PURCHASES:15, CONV_VALUE:16, ROAS:17,
+  HOOK:18, HOLD:19
+};
+
+// Column indices for MONTHLY sheet
+const M = {
+  BM:0, ACCOUNT:1, DATE_START:2, DATE_STOP:3,
+  CAMPAIGN:4, AD_SET:5, AD_NAME:6, AD_ID:7,
+  SPEND:8, IMP:9, REACH:10, CPM:11, CTR:12,
+  CLICKS:13, ATC:14, COST_ATC:15,
+  CHECKOUT:16, COST_CHECKOUT:17,
+  PURCHASES:18, CONV_VALUE:19, ROAS:20,
+  HOOK:21, HOLD:22, THUMB:23
+};
+
+// Column indices for DAILY
+const D = {
+  BM:0, ACCOUNT:1, DATE_START:2, DATE_STOP:3, GRAN:4,
+  SPEND:5, IMP:6, REACH:7, CPM:8, CTR:9,
+  CLICKS:10, ATC:11, COST_ATC:12,
+  CHECKOUT:13, COST_CHECKOUT:14,
+  PURCHASES:15, CONV_VALUE:16, ROAS:17,
+  HOOK:18, HOLD:19
+};
+
+// ─── State ────────────────────────────────────────────────────────────────
+let resumenData = [], monthlyData = [], dailyData = [];
+let charts = {};
+let chartMode = { spend:'mensual', cv:'mensual', roas:'mensual', cpa:'mensual' };
+let activeCreativeTab = 'all';
+
+// ─── Init ─────────────────────────────────────────────────────────────────
+function initDateDefaults() {
+  const today = new Date();
+  const y = today.getFullYear(), m = today.getMonth();
+  const from = new Date(y, m - 2, 1);
+  document.getElementById('dateFrom').value = fmtDate(from);
+  document.getElementById('dateTo').value   = fmtDate(today);
+}
+
+function loadBudgets() {
+  try {
+    document.getElementById('budgetUSA').value = localStorage.getItem('budget_usa') || '';
+    document.getElementById('budgetARG').value = localStorage.getItem('budget_arg') || '';
+  } catch(e) {}
+}
+function saveBudget(key, val) {
+  try { localStorage.setItem(key, val); } catch(e) {}
+}
+document.getElementById('budgetUSA').addEventListener('change', function(){ saveBudget('budget_usa', this.value); renderAll(); });
+document.getElementById('budgetARG').addEventListener('change', function(){ saveBudget('budget_arg', this.value); renderAll(); });
+document.getElementById('selAccount').addEventListener('change', renderAll);
+document.getElementById('dateFrom').addEventListener('change', renderAll);
+document.getElementById('dateTo').addEventListener('change', renderAll);
+document.getElementById('selGranularity').addEventListener('change', function(){ renderCharts(); renderKPIs(); });
+
+// ─── Data fetching ─────────────────────────────────────────────────────────
+function csvUrl(gid) {
+  return `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${gid}`;
+}
+
+function parseCSV(text) {
+  const rows = [];
+  const lines = text.trim().split('\n');
+  lines.forEach(line => {
+    const cols = [];
+    let cur = '', inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') { inQ = !inQ; }
+      else if (c === ',' && !inQ) { cols.push(cur.trim()); cur = ''; }
+      else { cur += c; }
+    }
+    cols.push(cur.trim());
+    rows.push(cols);
+  });
+  return rows;
+}
+
+function parseNum(v) {
+  if (v == null || v === '') return 0;
+  const s = String(v).replace(/[$%,\s]/g,'');
+  return isNaN(+s) ? 0 : +s;
+}
+
+function parseDate(v) {
+  if (!v) return null;
+  // formats: 2/23/2026, 2025-03-01, 2025-03-31
+  let d = new Date(v);
+  if (!isNaN(d)) return d;
+  // try M/D/YYYY
+  const p = v.split('/');
+  if (p.length===3) d = new Date(+p[2], +p[0]-1, +p[1]);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function fmtDate(d) {
+  if (!d) return '';
+  const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), day = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
+
+function fmt$(n, dec=0) {
+  if (!n && n!==0) return '—';
+  return '$' + n.toLocaleString('en-US', {minimumFractionDigits: dec, maximumFractionDigits: dec});
+}
+function fmtX(n) {
+  if (!n && n!==0) return '—';
+  return n.toFixed(2) + 'x';
+}
+function fmtPct(n) {
+  if (!n && n!==0) return '—';
+  return n.toFixed(1) + '%';
+}
+function fmtK(n) {
+  if (n >= 1e6) return (n/1e6).toFixed(1)+'M';
+  if (n >= 1e3) return (n/1e3).toFixed(1)+'k';
+  return Math.round(n).toString();
+}
+
+function setStatus(msg, isErr) {
+  const bar = document.getElementById('statusBar');
+  document.getElementById('statusText').textContent = msg;
+  document.getElementById('statusSpinner').style.display = isErr ? 'none' : 'inline-block';
+  bar.className = 'status-bar' + (isErr ? ' error' : '');
+}
+function hideStatus() {
+  document.getElementById('statusBar').className = 'status-bar hidden';
+}
+
+async function fetchCSV(gid) {
+  const r = await fetch(csvUrl(gid));
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return parseCSV(await r.text());
+}
+
+async function loadAll() {
+  setStatus('Cargando datos de Google Sheets...');
+  document.getElementById('refreshIcon').textContent = '⏳';
+  try {
+    const [res, mon, dai] = await Promise.all([
+      fetchCSV(GID_RESUMEN),
+      fetchCSV(GID_MONTHLY),
+      fetchCSV(GID_DAILY)
+    ]);
+    resumenData  = res.slice(1).filter(r => r[R.ACCOUNT]);
+    monthlyData  = mon.slice(1).filter(r => r[M.ACCOUNT]);
+    dailyData    = dai.slice(1).filter(r => r[D.ACCOUNT]);
+    hideStatus();
+    renderAll();
+  } catch(e) {
+    setStatus('Error cargando datos. Verificá que la hoja sea pública (Anyone with link → Viewer). ' + e.message, true);
+  }
+  document.getElementById('refreshIcon').textContent = '↻';
+}
+
+// ─── Filters ──────────────────────────────────────────────────────────────
+function getFilters() {
+  const acc  = document.getElementById('selAccount').value;
+  const from = document.getElementById('dateFrom').value;
+  const to   = document.getElementById('dateTo').value;
+  return { acc, from: from ? new Date(from) : null, to: to ? new Date(to+'T23:59:59') : null };
+}
+
+function filterResumen(gran) {
+  const {acc, from, to} = getFilters();
+  return resumenData.filter(r => {
+    if (acc !== 'all' && r[R.ACCOUNT] !== acc) return false;
+    if (gran && r[R.GRAN]?.toLowerCase() !== gran.toLowerCase()) return false;
+    const d = parseDate(r[R.DATE_START]);
+    if (from && d && d < from) return false;
+    if (to   && d && d > to)   return false;
+    return true;
+  });
+}
+
+function filterMonthly() {
+  const {acc, from, to} = getFilters();
+  return monthlyData.filter(r => {
+    if (acc !== 'all' && r[M.ACCOUNT] !== acc) return false;
+    const d = parseDate(r[M.DATE_START]);
+    if (from && d && d < from) return false;
+    if (to   && d && d > to)   return false;
+    return true;
+  });
+}
+
+function filterDaily() {
+  const {acc} = getFilters();
+  return dailyData.filter(r => acc === 'all' || r[D.ACCOUNT] === acc);
+}
+
+// ─── Aggregation ──────────────────────────────────────────────────────────
+function aggRows(rows, cols) {
+  const out = {};
+  cols.forEach(c => out[c] = 0);
+  rows.forEach(r => cols.forEach(c => out[c] += parseNum(r[c])));
+  // derived
+  if ('purchases' in out && 'conv_value' in out)
+    out.roas = out.spend > 0 ? out.conv_value / out.spend : 0;
+  if ('purchases' in out && 'spend' in out)
+    out.cpa = out.purchases > 0 ? out.spend / out.purchases : 0;
+  return out;
+}
+
+function sumField(rows, idx) { return rows.reduce((s,r) => s + parseNum(r[idx]), 0); }
+
+// ─── KPIs ─────────────────────────────────────────────────────────────────
+function renderKPIs() {
+  const {from, to} = getFilters();
+  const gran = document.getElementById('selGranularity').value === 'week' ? 'Diario' : 'Diario';
+
+  const curr = filterResumen('Diario');
+  const spend = sumField(curr, R.SPEND);
+  const purchases = sumField(curr, R.PURCHASES);
+  const convVal   = sumField(curr, R.CONV_VALUE);
+  const imp       = sumField(curr, R.IMP);
+  const atc       = sumField(curr, R.ATC);
+  const checkout  = sumField(curr, R.CHECKOUT);
+  const clicks    = sumField(curr, R.CLICKS);
+  const roas      = spend > 0 ? convVal / spend : 0;
+  const cpa       = purchases > 0 ? spend / purchases : 0;
+  const ctr       = imp > 0 ? clicks / imp * 100 : 0;
+  const cpm       = imp > 0 ? spend / imp * 1000 : 0;
+
+  // Previous period for comparison
+  const range = (to && from) ? (to - from) : 30*24*3600*1000;
+  const prevTo   = from ? new Date(from.getTime() - 1) : null;
+  const prevFrom = prevTo ? new Date(prevTo.getTime() - range) : null;
+  const {acc} = getFilters();
+
+  const prevRows = prevFrom ? resumenData.filter(r => {
+    if (acc !== 'all' && r[R.ACCOUNT] !== acc) return false;
+    if (r[R.GRAN]?.toLowerCase() !== 'diario') return false;
+    const d = parseDate(r[R.DATE_START]);
+    return d && d >= prevFrom && d <= prevTo;
+  }) : [];
+
+  const prevSpend = sumField(prevRows, R.SPEND);
+  const prevPurchases = sumField(prevRows, R.PURCHASES);
+  const prevConvVal = sumField(prevRows, R.CONV_VALUE);
+  const prevRoas = prevSpend > 0 ? prevConvVal / prevSpend : 0;
+  const prevCpa  = prevPurchases > 0 ? prevSpend / prevPurchases : 0;
+
+  function delta(curr, prev, invert) {
+    if (!prev) return null;
+    const pct = ((curr - prev) / prev) * 100;
+    const up = invert ? pct < 0 : pct > 0;
+    return { pct, cls: pct === 0 ? 'delta-neutral' : (up ? 'delta-up' : 'delta-down'), arrow: pct > 0 ? '↑' : '↓' };
+  }
+
+  function kpiHtml(label, value, sub, dlt, extra='') {
+    let dHtml = '';
+    if (dlt) dHtml = `<span class="kpi-delta ${dlt.cls}">${dlt.arrow} ${Math.abs(dlt.pct).toFixed(1)}% vs período ant.</span>`;
+    return `<div class="kpi"><div class="kpi-label">${label}</div><div class="kpi-value">${value}</div>${sub?`<div class="kpi-sub">${sub}</div>`:''}${dHtml}${extra}</div>`;
+  }
+
+  const kpis = [
+    kpiHtml('Spend Total', fmt$(spend), `${curr.length} días`, delta(spend, prevSpend, false)),
+    kpiHtml('Conv. Value', fmt$(convVal), `${purchases} compras`, delta(convVal, prevConvVal, true)),
+    kpiHtml('ROAS', fmtX(roas), `Objetivo: 2x`, delta(roas, prevRoas, true)),
+    kpiHtml('CPA', fmt$(cpa, 2), `por compra`, delta(cpa, prevCpa, true)),
+    kpiHtml('CTR', fmtPct(ctr), `${fmtK(imp)} impresiones`, null),
+    kpiHtml('CPM', fmt$(cpm, 2), `costo por mil`, null),
+    kpiHtml('ATC', Math.round(atc).toLocaleString(), `adds to cart`, null),
+    kpiHtml('Checkouts', Math.round(checkout).toLocaleString(), `iniciados`, null),
+  ];
+
+  document.getElementById('kpiTitle').textContent = `KPIs del período${curr.length ? ` (${curr.length} días)` : ''}`;
+  document.getElementById('kpiGrid').innerHTML = kpis.join('');
+  document.getElementById('kpiGrid').style.display = 'grid';
+}
+
+// ─── Projection ────────────────────────────────────────────────────────────
+function renderProjection() {
+  const {acc} = getFilters();
+  const today = new Date();
+  const y = today.getFullYear(), m = today.getMonth();
+  const monthStart = new Date(y, m, 1);
+  const monthEnd   = new Date(y, m+1, 0);
+  const daysInMonth = monthEnd.getDate();
+  const daysPassed  = today.getDate();
+  const daysLeft    = daysInMonth - daysPassed;
+
+  const accounts = acc === 'all' ? ['ALAC USA', 'ALAC ARG'] : [acc];
+
+  const cards = accounts.map(account => {
+    const monthRows = resumenData.filter(r =>
+      r[R.ACCOUNT] === account && r[R.GRAN]?.toLowerCase() === 'diario' &&
+      (() => { const d = parseDate(r[R.DATE_START]); return d && d >= monthStart && d <= today; })()
+    );
+    const last7Rows = resumenData.filter(r => {
+      if (r[R.ACCOUNT] !== account || r[R.GRAN]?.toLowerCase() !== 'diario') return false;
+      const d = parseDate(r[R.DATE_START]);
+      if (!d) return false;
+      const ago7 = new Date(today.getTime() - 7*24*3600*1000);
+      return d >= ago7 && d < today;
+    });
+
+    const spendMTD = sumField(monthRows, R.SPEND);
+    const dailyAvg7 = last7Rows.length ? sumField(last7Rows, R.SPEND) / last7Rows.length : (daysPassed > 0 ? spendMTD / daysPassed : 0);
+    const projected = spendMTD + dailyAvg7 * daysLeft;
+    const budget    = account === 'ALAC USA' ? parseNum(document.getElementById('budgetUSA').value) : parseNum(document.getElementById('budgetARG').value);
+    const pct = budget > 0 ? Math.min(projected / budget * 100, 120) : 0;
+    const status = budget <= 0 ? 'neutral' : projected > budget * 1.1 ? 'over' : projected > budget * 0.9 ? 'warn' : 'safe';
+    const flag = account === 'ALAC USA' ? '🇺🇸' : '🇦🇷';
+
+    let budgetLine = budget > 0 ?
+      `<div class="prog-label"><span>Proyectado: ${fmt$(projected)}</span><span>Budget: ${fmt$(budget)}</span></div>
+       <div class="prog-bar"><div class="prog-fill ${status}" style="width:${pct}%"></div></div>` : '';
+
+    return `<div class="kpi">
+      <div class="kpi-label">${flag} ${account}</div>
+      <div class="kpi-value">${fmt$(projected)}</div>
+      <div class="kpi-sub">Gastado: ${fmt$(spendMTD)} | Ritmo: ${fmt$(dailyAvg7,2)}/día</div>
+      <div class="kpi-delta ${status==='over'?'delta-down':status==='warn'?'delta-neutral':'delta-up'}">
+        ${daysPassed} días transcurridos · ${daysLeft} restantes
+      </div>
+      ${budgetLine}
+    </div>`;
+  });
+
+  document.getElementById('projGrid').innerHTML = cards.join('');
+}
+
+// ─── Funnel ────────────────────────────────────────────────────────────────
+function renderFunnel() {
+  const {acc} = getFilters();
+  const accounts = acc === 'all' ? ['ALAC USA', 'ALAC ARG'] : [acc];
+
+  const cards = accounts.map(account => {
+    const rows = filterResumen('Diario').filter(r => r[R.ACCOUNT] === account);
+    const imp   = sumField(rows, R.IMP);
+    const clk   = sumField(rows, R.CLICKS);
+    const atc   = sumField(rows, R.ATC);
+    const chk   = sumField(rows, R.CHECKOUT);
+    const pur   = sumField(rows, R.PURCHASES);
+
+    const steps = [
+      { label: 'Impresiones', val: imp,  ref: imp },
+      { label: 'Clics', val: clk, ref: imp },
+      { label: 'Add to Cart', val: atc, ref: imp },
+      { label: 'Checkout', val: chk, ref: imp },
+      { label: 'Compras', val: pur, ref: imp },
+    ];
+
+    const flag = account === 'ALAC USA' ? '🇺🇸' : '🇦🇷';
+    const stepsHtml = steps.map((s,i) => {
+      const pct = s.ref > 0 ? (s.val / s.ref * 100) : 0;
+      const w   = Math.max(pct, 3);
+      const vs  = i > 0 ? (steps[i-1].val > 0 ? (s.val / steps[i-1].val * 100) : 0) : 100;
+      return `<div class="funnel-step">
+        <div class="funnel-label">${s.label}</div>
+        <div class="funnel-bar-wrap"><div class="funnel-bar" style="width:${Math.min(w,100)}%">${fmtK(s.val)}</div></div>
+        <div class="funnel-pct">${i===0 ? '100%' : vs.toFixed(1)+'%'}</div>
+      </div>`;
+    }).join('');
+
+    return `<div class="funnel-card"><div class="funnel-title">${flag} ${account}</div>${stepsHtml}</div>`;
+  });
+
+  document.getElementById('funnelGrid').innerHTML = cards.join('') || '<div class="empty">Sin datos</div>';
+}
+
+// ─── Charts ────────────────────────────────────────────────────────────────
+function getChartColors(account) {
+  return account === 'ALAC USA' ? { line: '#2563eb', bg: 'rgba(37,99,235,.1)' } : { line: '#16a34a', bg: 'rgba(22,163,74,.1)' };
+}
+
+function buildChartData(metric, gran) {
+  const {acc} = getFilters();
+  const accounts = acc === 'all' ? ['ALAC USA', 'ALAC ARG'] : [acc];
+  const source = gran === 'mensual' ? resumenData : dailyData;
+  const granFilter = 'Diario';
+
+  // Group by period
+  const byPeriod = {};
+  source.forEach(r => {
+    if (!accounts.includes(r[R.ACCOUNT])) return;
+    if (r[R.GRAN]?.toLowerCase() !== granFilter.toLowerCase()) return;
+    const d = parseDate(r[R.DATE_START]);
+    if (!d) return;
+    let key;
+    if (gran === 'mensual') {
+      key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    } else {
+      // group by week
+      const day = new Date(d); day.setDate(day.getDate() - day.getDay());
+      key = fmtDate(day);
+    }
+    if (!byPeriod[key]) byPeriod[key] = {};
+    const acct = r[R.ACCOUNT];
+    if (!byPeriod[key][acct]) byPeriod[key][acct] = { spend:0, cv:0, pur:0, imp:0, clk:0 };
+    byPeriod[key][acct].spend += parseNum(r[R.SPEND]);
+    byPeriod[key][acct].cv    += parseNum(r[R.CONV_VALUE]);
+    byPeriod[key][acct].pur   += parseNum(r[R.PURCHASES]);
+    byPeriod[key][acct].imp   += parseNum(r[R.IMP]);
+    byPeriod[key][acct].clk   += parseNum(r[R.CLICKS]);
+  });
+
+  const labels = Object.keys(byPeriod).sort().slice(-13);
+  const datasets = accounts.map(acct => {
+    const {line, bg} = getChartColors(acct);
+    const data = labels.map(lbl => {
+      const p = byPeriod[lbl]?.[acct];
+      if (!p) return 0;
+      if (metric==='spend') return +(p.spend.toFixed(2));
+      if (metric==='cv')    return +(p.cv.toFixed(2));
+      if (metric==='roas')  return p.spend > 0 ? +(p.cv/p.spend).toFixed(3) : 0;
+      if (metric==='cpa')   return p.pur  > 0 ? +(p.spend/p.pur).toFixed(2) : 0;
+    });
+    return { label: acct, data, borderColor: line, backgroundColor: bg, fill: true, tension: .35, pointRadius: 3, borderWidth: 2 };
+  });
+
+  return { labels, datasets };
+}
+
+function renderChart(id, metric, gran) {
+  if (charts[id]) { charts[id].destroy(); delete charts[id]; }
+  const ctx = document.getElementById(id);
+  if (!ctx) return;
+  const {labels, datasets} = buildChartData(metric, gran);
+  charts[id] = new Chart(ctx, {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false, interaction: { mode: 'index' },
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 11 } } } },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 10 }, maxRotation: 45 } },
+        y: { grid: { color: '#f3f4f6' }, ticks: { font: { size: 10 } } }
+      }
+    }
+  });
+}
+
+function renderCharts() {
+  renderChart('spendChart', 'spend', chartMode.spend);
+  renderChart('cvChart',    'cv',    chartMode.cv);
+  renderChart('roasChart',  'roas',  chartMode.roas);
+  renderChart('cpaChart',   'cpa',   chartMode.cpa);
+}
+
+function switchChartTab(metric, mode, btn) {
+  chartMode[metric] = mode;
+  const par = btn.closest('.chart-tabs');
+  par.querySelectorAll('.chart-tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  const idMap = { spend:'spendChart', cv:'cvChart', roas:'roasChart', cpa:'cpaChart' };
+  renderChart(idMap[metric], metric, mode);
+}
+
+// ─── Campaign table ────────────────────────────────────────────────────────
+function renderCampaignTable() {
+  const {acc} = getFilters();
+  // Use monthly for campaign breakdown
+  const rows = filterMonthly();
+
+  // Aggregate by campaign
+  const byCamp = {};
+  rows.forEach(r => {
+    const key = `${r[M.ACCOUNT]} | ${r[M.CAMPAIGN]}`;
+    if (!byCamp[key]) byCamp[key] = { account: r[M.ACCOUNT], campaign: r[M.CAMPAIGN], spend:0, cv:0, pur:0, atc:0, imp:0, clk:0, chk:0 };
+    const c = byCamp[key];
+    c.spend += parseNum(r[M.SPEND]);
+    c.cv    += parseNum(r[M.CONV_VALUE]);
+    c.pur   += parseNum(r[M.PURCHASES]);
+    c.atc   += parseNum(r[M.ATC]);
+    c.imp   += parseNum(r[M.IMP]);
+    c.clk   += parseNum(r[M.CLICKS]);
+    c.chk   += parseNum(r[M.CHECKOUT]);
+  });
+
+  const sorted = Object.values(byCamp).sort((a,b) => b.spend - a.spend).slice(0, 15);
+
+  if (!sorted.length) {
+    document.getElementById('campaignTable').innerHTML = '<div class="empty">Sin datos en el período seleccionado</div>';
+    return;
+  }
+
+  const thead = `<thead><tr>
+    <th>Cuenta</th><th>Campaña</th><th>Spend</th><th>Conv. Value</th>
+    <th>ROAS</th><th>Compras</th><th>CPA</th><th>CTR</th><th>ATC</th>
+  </tr></thead>`;
+
+  const tbody = sorted.map(c => {
+    const roas = c.spend > 0 ? c.cv / c.spend : 0;
+    const cpa  = c.pur  > 0 ? c.spend / c.pur : 0;
+    const ctr  = c.imp  > 0 ? c.clk / c.imp * 100 : 0;
+    const rPill = roas >= 2 ? 'pill-green' : roas >= 1 ? 'pill-amber' : 'pill-red';
+    return `<tr>
+      <td><span class="pill pill-blue">${c.account}</span></td>
+      <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis" title="${c.campaign}">${c.campaign}</td>
+      <td>${fmt$(c.spend)}</td>
+      <td>${fmt$(c.cv)}</td>
+      <td><span class="pill ${rPill}">${fmtX(roas)}</span></td>
+      <td>${Math.round(c.pur)}</td>
+      <td>${c.pur > 0 ? fmt$(cpa,2) : '—'}</td>
+      <td>${fmtPct(ctr)}</td>
+      <td>${Math.round(c.atc)}</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('campaignTable').innerHTML = `<table>${thead}<tbody>${tbody}</tbody></table>`;
+}
+
+// ─── Creatives ─────────────────────────────────────────────────────────────
+function switchCreativeTab(tab, btn) {
+  activeCreativeTab = tab;
+  document.querySelectorAll('.creative-tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  renderCreatives();
+}
+
+function renderCreatives() {
+  const rows = monthlyData.filter(r =>
+    activeCreativeTab === 'all' || r[M.ACCOUNT] === activeCreativeTab
+  );
+
+  // Aggregate by ad name + account
+  const byAd = {};
+  rows.forEach(r => {
+    const key = `${r[M.ACCOUNT]}||${r[M.AD_NAME]}`;
+    if (!byAd[key]) byAd[key] = {
+      account: r[M.ACCOUNT], name: r[M.AD_NAME],
+      spend:0, cv:0, pur:0, imp:0, atc:0, chk:0,
+      hook: parseNum(r[M.HOOK]), hold: parseNum(r[M.HOLD]),
+      thumb: r[M.THUMB] || ''
+    };
+    const ad = byAd[key];
+    ad.spend += parseNum(r[M.SPEND]);
+    ad.cv    += parseNum(r[M.CONV_VALUE]);
+    ad.pur   += parseNum(r[M.PURCHASES]);
+    ad.imp   += parseNum(r[M.IMP]);
+    ad.atc   += parseNum(r[M.ATC]);
+    ad.chk   += parseNum(r[M.CHECKOUT]);
+    if (!ad.thumb && r[M.THUMB]) ad.thumb = r[M.THUMB];
+    ad.hook   = Math.max(ad.hook, parseNum(r[M.HOOK]));
+    ad.hold   = Math.max(ad.hold, parseNum(r[M.HOLD]));
+  });
+
+  // Top 10 per account or top 20 overall
+  const sorted = Object.values(byAd).sort((a,b) => b.spend - a.spend);
+  const top = activeCreativeTab === 'all'
+    ? ['ALAC USA','ALAC ARG'].flatMap(acc => sorted.filter(a => a.account===acc).slice(0,10))
+    : sorted.slice(0,10);
+
+  if (!top.length) {
+    document.getElementById('creativeGrid').innerHTML = '<div class="kpi empty" style="grid-column:1/-1">Sin datos de creativos</div>';
+    return;
+  }
+
+  const maxSpend = Math.max(...top.map(a => a.spend));
+
+  const cards = top.map((ad, i) => {
+    const roas = ad.spend > 0 ? ad.cv / ad.spend : 0;
+    const cpa  = ad.pur  > 0 ? ad.spend / ad.pur : 0;
+    const rankLabel = i + 1;
+    const flag = ad.account === 'ALAC USA' ? '🇺🇸' : '🇦🇷';
+
+    // Badge logic
+    let badge = '';
+    if (roas >= 4)  badge = `<span class="creative-badge badge-winner">⭐ Winner</span>`;
+    else if (roas >= 2.5 && ad.spend < maxSpend * 0.3) badge = `<span class="creative-badge badge-scale">📈 Escalar</span>`;
+    else if (roas < 1.2 && ad.spend > 200) badge = `<span class="creative-badge badge-watch">⚠️ Revisar</span>`;
+
+    // Thumbnail — try to render, fallback to gradient placeholder
+    let imgHtml;
+    if (ad.thumb && ad.thumb.startsWith('http')) {
+      imgHtml = `<img src="${ad.thumb}" alt="${ad.name}" loading="lazy" onerror="this.parentNode.innerHTML='<div class=\\'no-img\\'><svg viewBox=\\'0 0 24 24\\' fill=\\'none\\' stroke=\\'currentColor\\'><rect x=\\'3\\' y=\\'3\\' width=\\'18\\' height=\\'18\\' rx=\\'2\\'/><circle cx=\\'8.5\\' cy=\\'8.5\\' r=\\'1.5\\'/><path d=\\'m21 15-5-5L5 21\\'/></svg><span style=\\'font-size:10px\\'>Sin imagen</span></div>'">`;
+    } else {
+      // Colorful gradient placeholder based on name
+      const hue = (ad.name.split('').reduce((h,c)=>h+c.charCodeAt(0),0)) % 360;
+      imgHtml = `<div class="no-img" style="background:linear-gradient(135deg,hsl(${hue},60%,85%),hsl(${(hue+40)%360},60%,75%))">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+        <span style="font-size:10px;color:#555">Sin imagen</span>
+      </div>`;
+    }
+
+    const roasCls = roas >= 3 ? 'good' : roas < 1.5 ? 'bad' : '';
+    const hookCls = ad.hook >= 30 ? 'good' : ad.hook < 10 ? 'bad' : '';
+
+    return `<div class="creative-card">
+      <div class="creative-img-wrap">
+        ${imgHtml}
+        <span class="creative-rank">${flag} #${rankLabel}</span>
+        ${badge}
+      </div>
+      <div class="creative-body">
+        <div class="creative-name" title="${ad.name}">${ad.name || 'Sin nombre'}</div>
+        <div class="creative-metrics">
+          <div class="cm"><div class="cm-label">Spend</div><div class="cm-value">${fmt$(ad.spend)}</div></div>
+          <div class="cm"><div class="cm-label">ROAS</div><div class="cm-value ${roasCls}">${fmtX(roas)}</div></div>
+          <div class="cm"><div class="cm-label">Hook</div><div class="cm-value ${hookCls}">${ad.hook > 0 ? fmtPct(ad.hook) : '—'}</div></div>
+          <div class="cm"><div class="cm-label">Hold</div><div class="cm-value">${ad.hold > 0 ? fmtPct(ad.hold) : '—'}</div></div>
+          <div class="cm"><div class="cm-label">Compras</div><div class="cm-value">${Math.round(ad.pur)}</div></div>
+          <div class="cm"><div class="cm-label">CPA</div><div class="cm-value">${ad.pur > 0 ? fmt$(cpa,2) : '—'}</div></div>
+        </div>
+        <div class="creative-bar"><div class="creative-bar-fill" style="width:${(ad.spend/maxSpend*100).toFixed(1)}%"></div></div>
+      </div>
+    </div>`;
+  });
+
+  document.getElementById('creativeGrid').innerHTML = cards.join('');
+}
+
+// ─── Render all ────────────────────────────────────────────────────────────
+function renderAll() {
+  renderKPIs();
+  renderProjection();
+  renderFunnel();
+  renderCharts();
+  renderCampaignTable();
+  renderCreatives();
+}
+
+// ─── Startup ───────────────────────────────────────────────────────────────
+initDateDefaults();
+loadBudgets();
+loadAll();
+</script>
+</body>
+</html>
+
 .section-label{font-size:11px;font-weight:500;color:#999;letter-spacing:.06em;text-transform:uppercase;margin-bottom:.75rem;margin-top:1.5rem}
 .loading{text-align:center;padding:3rem;color:#888;font-size:14px}
 .error{background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:1rem;font-size:13px;color:#dc2626;margin-bottom:1rem}
