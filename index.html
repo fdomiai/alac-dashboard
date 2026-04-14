@@ -509,9 +509,11 @@ function filterMonthly() {
   const {acc, from, to} = getFilters();
   return monthlyData.filter(r => {
     if (acc !== 'all' && r[M.ACCOUNT] !== acc) return false;
-    const d = parseDate(r[M.DATE_START]);
-    if (from && d && d < from) return false;
-    if (to   && d && d > to)   return false;
+    const dStart = parseDate(r[M.DATE_START]);
+    const dStop  = parseDate(r[M.DATE_STOP]) || dStart;
+    // Include row if its period overlaps with [from, to]
+    if (from && dStop  && dStop  < from) return false;
+    if (to   && dStart && dStart > to)   return false;
     return true;
   });
 }
@@ -539,8 +541,15 @@ function sumField(rows, idx) { return rows.reduce((s,r) => s + parseNum(r[idx]),
 // ─── KPIs ─────────────────────────────────────────────────────────────────
 function renderKPIs() {
   const {from, to, acc} = getFilters();
+  const today = new Date();
 
-  const curr = filterResumen('Diario');
+  // Pick granularity: if the selected period starts more than 30 days ago,
+  // use Mensual rows (which cover full past months). Otherwise use Diario.
+  const thirtyDaysAgo = new Date(today.getTime() - 30 * 24 * 3600 * 1000);
+  const useMonthly = from && from < thirtyDaysAgo;
+  const gran = useMonthly ? 'Mensual' : 'Diario';
+
+  const curr = filterResumen(gran);
   const spend = sumField(curr, R.SPEND);
   const purchases = sumField(curr, R.PURCHASES);
   const convVal   = sumField(curr, R.CONV_VALUE);
@@ -553,14 +562,20 @@ function renderKPIs() {
   const ctr       = imp > 0 ? clicks / imp * 100 : 0;
   const cpm       = imp > 0 ? spend / imp * 1000 : 0;
 
-  // Previous period for comparison
+  // Subtitle: unique days or months in result
+  const uniqueDates = new Set(curr.map(r => r[R.DATE_START])).size;
+  const dateSub = useMonthly
+    ? `${uniqueDates} mes${uniqueDates !== 1 ? 'es' : ''}`
+    : `${uniqueDates} día${uniqueDates !== 1 ? 's' : ''}`;
+
+  // Previous period for comparison (same granularity)
   const range = (to && from) ? (to - from) : 30*24*3600*1000;
   const prevTo   = from ? new Date(from.getTime() - 1) : null;
   const prevFrom = prevTo ? new Date(prevTo.getTime() - range) : null;
 
   const prevRows = prevFrom ? resumenData.filter(r => {
     if (acc !== 'all' && r[R.ACCOUNT] !== acc) return false;
-    if (r[R.GRAN]?.toLowerCase() !== 'diario') return false;
+    if (r[R.GRAN]?.toLowerCase() !== gran.toLowerCase()) return false;
     const d = parseDate(r[R.DATE_START]);
     return d && d >= prevFrom && d <= prevTo;
   }) : [];
@@ -585,8 +600,8 @@ function renderKPIs() {
   }
 
   const kpis = [
-    kpiHtml('Spend Total', fmt$(spend), `${curr.length} días`, delta(spend, prevSpend, false)),
-    kpiHtml('Conv. Value', fmt$(convVal), `${purchases} compras`, delta(convVal, prevConvVal, true)),
+    kpiHtml('Spend Total', fmt$(spend), dateSub, delta(spend, prevSpend, false)),
+    kpiHtml('Conv. Value', fmt$(convVal), `${Math.round(purchases)} compras`, delta(convVal, prevConvVal, true)),
     kpiHtml('ROAS', fmtX(roas), `Objetivo: 2x`, delta(roas, prevRoas, true)),
     kpiHtml('CPA', fmt$(cpa, 2), `por compra`, delta(cpa, prevCpa, true)),
     kpiHtml('CTR', fmtPct(ctr), `${fmtK(imp)} impresiones`, null),
@@ -876,7 +891,9 @@ function switchCreativeTab(tab, btn) {
 }
 
 function renderCreatives() {
-  const rows = monthlyData.filter(r =>
+  // filterMonthly() applies both date range and account dropdown filter
+  const base = filterMonthly();
+  const rows = base.filter(r =>
     activeCreativeTab === 'all' || r[M.ACCOUNT] === activeCreativeTab
   );
 
