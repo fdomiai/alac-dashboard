@@ -664,48 +664,77 @@ function getChartColors(account) {
 }
 
 function buildChartData(metric, gran) {
-  const {acc} = getFilters();
+  const {acc, from, to} = getFilters();
   const accounts = acc === 'all' ? ['ALAC USA', 'ALAC ARG'] : [acc];
-  const source = gran === 'mensual' ? resumenData : dailyData;
-  const granFilter = 'Diario';
 
-  // Group by period
+  // Always use resumenData (which has the GRAN column).
+  // For monthly: group daily rows by year-month within the date filter.
+  // For weekly:  group daily rows by ISO week (last 16 weeks from today).
+  const today = new Date();
+  const weekCutoff = new Date(today.getTime() - 16 * 7 * 24 * 3600 * 1000);
+
   const byPeriod = {};
-  source.forEach(r => {
+  resumenData.forEach(r => {
     if (!accounts.includes(r[R.ACCOUNT])) return;
-    if (r[R.GRAN]?.toLowerCase() !== granFilter.toLowerCase()) return;
+    if ((r[R.GRAN] || '').toLowerCase() !== 'diario') return;
     const d = parseDate(r[R.DATE_START]);
     if (!d) return;
+
+    if (gran === 'mensual') {
+      // Apply the date range filter for monthly view
+      if (from && d < from) return;
+      if (to   && d > to)   return;
+    } else {
+      // Weekly: always show last 16 weeks regardless of date picker
+      if (d < weekCutoff || d > today) return;
+    }
+
     let key;
     if (gran === 'mensual') {
       key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
     } else {
-      // group by week
-      const day = new Date(d); day.setDate(day.getDate() - day.getDay());
+      // Group by Monday of the week
+      const day = new Date(d);
+      const dow = day.getDay(); // 0=Sun … 6=Sat
+      day.setDate(day.getDate() - (dow === 0 ? 6 : dow - 1));
       key = fmtDate(day);
     }
-    if (!byPeriod[key]) byPeriod[key] = {};
+
     const acct = r[R.ACCOUNT];
+    if (!byPeriod[key]) byPeriod[key] = {};
     if (!byPeriod[key][acct]) byPeriod[key][acct] = { spend:0, cv:0, pur:0, imp:0, clk:0 };
-    byPeriod[key][acct].spend += parseNum(r[R.SPEND]);
-    byPeriod[key][acct].cv    += parseNum(r[R.CONV_VALUE]);
-    byPeriod[key][acct].pur   += parseNum(r[R.PURCHASES]);
-    byPeriod[key][acct].imp   += parseNum(r[R.IMP]);
-    byPeriod[key][acct].clk   += parseNum(r[R.CLICKS]);
+    const p = byPeriod[key][acct];
+    p.spend += parseNum(r[R.SPEND]);
+    p.cv    += parseNum(r[R.CONV_VALUE]);
+    p.pur   += parseNum(r[R.PURCHASES]);
+    p.imp   += parseNum(r[R.IMP]);
+    p.clk   += parseNum(r[R.CLICKS]);
   });
 
-  const labels = Object.keys(byPeriod).sort().slice(-13);
+  const maxPeriods = gran === 'mensual' ? 13 : 16;
+  const rawLabels = Object.keys(byPeriod).sort().slice(-maxPeriods);
+  // Human-readable labels
+  const MONTHS_ES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  const labels = rawLabels.map(k => {
+    if (gran === 'mensual') {
+      const [y, m] = k.split('-');
+      return `${MONTHS_ES[+m-1]} ${y.slice(2)}`;
+    }
+    // weekly: show "Sem DD/MM"
+    const [y, m, d] = k.split('-');
+    return `${d}/${m}`;
+  });
   const datasets = accounts.map(acct => {
     const {line, bg} = getChartColors(acct);
-    const data = labels.map(lbl => {
+    const data = rawLabels.map(lbl => {
       const p = byPeriod[lbl]?.[acct];
-      if (!p) return 0;
+      if (!p) return null;
       if (metric==='spend') return +(p.spend.toFixed(2));
       if (metric==='cv')    return +(p.cv.toFixed(2));
-      if (metric==='roas')  return p.spend > 0 ? +(p.cv/p.spend).toFixed(3) : 0;
-      if (metric==='cpa')   return p.pur  > 0 ? +(p.spend/p.pur).toFixed(2) : 0;
+      if (metric==='roas')  return p.spend > 0 ? +(p.cv/p.spend).toFixed(3) : null;
+      if (metric==='cpa')   return p.pur  > 0 ? +(p.spend/p.pur).toFixed(2) : null;
     });
-    return { label: acct, data, borderColor: line, backgroundColor: bg, fill: true, tension: .35, pointRadius: 3, borderWidth: 2 };
+    return { label: acct, data, borderColor: line, backgroundColor: bg, fill: true, tension: .35, pointRadius: 3, borderWidth: 2, spanGaps: false };
   });
 
   return { labels, datasets };
@@ -817,11 +846,12 @@ function renderCreatives() {
   const byAd = {};
   rows.forEach(r => {
     const key = `${r[M.ACCOUNT]}||${r[M.AD_NAME]}`;
+    const rawThumb = String(r[M.THUMB] || '').trim();
+    const validThumb = rawThumb.startsWith('http') ? rawThumb : '';
     if (!byAd[key]) byAd[key] = {
       account: r[M.ACCOUNT], name: r[M.AD_NAME],
       spend:0, cv:0, pur:0, imp:0, atc:0, chk:0,
-      hook: parseNum(r[M.HOOK]), hold: parseNum(r[M.HOLD]),
-      thumb: r[M.THUMB] || ''
+      hook: 0, hold: 0, thumb: validThumb
     };
     const ad = byAd[key];
     ad.spend += parseNum(r[M.SPEND]);
@@ -830,9 +860,12 @@ function renderCreatives() {
     ad.imp   += parseNum(r[M.IMP]);
     ad.atc   += parseNum(r[M.ATC]);
     ad.chk   += parseNum(r[M.CHECKOUT]);
-    if (!ad.thumb && r[M.THUMB]) ad.thumb = r[M.THUMB];
-    ad.hook   = Math.max(ad.hook, parseNum(r[M.HOOK]));
-    ad.hold   = Math.max(ad.hold, parseNum(r[M.HOLD]));
+    // Keep the first valid thumbnail found for this ad
+    if (!ad.thumb && validThumb) ad.thumb = validThumb;
+    // Take max hook/hold across all monthly rows for the same ad
+    const h = parseNum(r[M.HOOK]), ho = parseNum(r[M.HOLD]);
+    if (h  > 0) ad.hook = Math.max(ad.hook, h);
+    if (ho > 0) ad.hold = Math.max(ad.hold, ho);
   });
 
   // Top 10 per account or top 20 overall
@@ -860,17 +893,20 @@ function renderCreatives() {
     else if (roas >= 2.5 && ad.spend < maxSpend * 0.3) badge = `<span class="creative-badge badge-scale">📈 Escalar</span>`;
     else if (roas < 1.2 && ad.spend > 200) badge = `<span class="creative-badge badge-watch">⚠️ Revisar</span>`;
 
-    // Thumbnail — try to render, fallback to gradient placeholder
+    // Thumbnail — try to render; on error or no URL, show gradient with initials
+    const hue = (ad.name.split('').reduce((h,c)=>h+c.charCodeAt(0),0)) % 360;
+    const initials = ad.name.split(/[\s|]+/).slice(0,2).map(w=>w[0]||'').join('').toUpperCase();
+    const fallbackStyle = `background:linear-gradient(135deg,hsl(${hue},55%,72%),hsl(${(hue+50)%360},55%,60%));display:flex;flex-direction:column;align-items:center;justify-content:center;position:absolute;inset:0;`;
+    const fallbackHtml  = `<div style="${fallbackStyle}"><span style="font-size:28px;font-weight:800;color:rgba(255,255,255,.9);letter-spacing:-1px">${initials}</span><span style="font-size:9px;color:rgba(255,255,255,.75);margin-top:4px;text-align:center;padding:0 8px;line-height:1.3">${ad.name.slice(0,30)}</span></div>`;
+
     let imgHtml;
-    if (ad.thumb && ad.thumb.startsWith('http')) {
-      imgHtml = `<img src="${ad.thumb}" alt="${ad.name}" loading="lazy" onerror="this.parentNode.innerHTML='<div class=\\'no-img\\'><svg viewBox=\\'0 0 24 24\\' fill=\\'none\\' stroke=\\'currentColor\\'><rect x=\\'3\\' y=\\'3\\' width=\\'18\\' height=\\'18\\' rx=\\'2\\'/><circle cx=\\'8.5\\' cy=\\'8.5\\' r=\\'1.5\\'/><path d=\\'m21 15-5-5L5 21\\'/></svg><span style=\\'font-size:10px\\'>Sin imagen</span></div>'">`;
+    if (ad.thumb) {
+      imgHtml = `<img src="${ad.thumb}" alt="${ad.name}" loading="lazy"
+        style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"
+        onerror="this.style.display='none';this.nextSibling.style.display='flex'">
+        <div style="${fallbackStyle}display:none"><span style="font-size:28px;font-weight:800;color:rgba(255,255,255,.9)">${initials}</span></div>`;
     } else {
-      // Colorful gradient placeholder based on name
-      const hue = (ad.name.split('').reduce((h,c)=>h+c.charCodeAt(0),0)) % 360;
-      imgHtml = `<div class="no-img" style="background:linear-gradient(135deg,hsl(${hue},60%,85%),hsl(${(hue+40)%360},60%,75%))">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
-        <span style="font-size:10px;color:#555">Sin imagen</span>
-      </div>`;
+      imgHtml = fallbackHtml;
     }
 
     const roasCls = roas >= 3 ? 'good' : roas < 1.5 ? 'bad' : '';
