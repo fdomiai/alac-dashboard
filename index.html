@@ -625,45 +625,74 @@ function renderProjection() {
   const {acc} = getFilters();
   const today = new Date();
   const y = today.getFullYear(), m = today.getMonth();
-  const monthStart = new Date(y, m, 1);
-  const monthEnd   = new Date(y, m+1, 0);
+  const monthStart  = new Date(y, m, 1);
+  const monthEnd    = new Date(y, m+1, 0);
   const daysInMonth = monthEnd.getDate();
   const daysPassed  = today.getDate();
   const daysLeft    = daysInMonth - daysPassed;
 
+  // Last 7 days window (excludes today since it's incomplete)
+  const ago7 = new Date(today.getTime() - 7*24*3600*1000);
+
   const accounts = acc === 'all' ? ['ALAC USA', 'ALAC ARG'] : [acc];
 
   const cards = accounts.map(account => {
-    const monthRows = resumenData.filter(r =>
-      r[R.ACCOUNT] === account && r[R.GRAN]?.toLowerCase() === 'diario' &&
-      (() => { const d = parseDate(r[R.DATE_START]); return d && d >= monthStart && d <= today; })()
-    );
+    // Month-to-date rows (for spendMTD)
+    const monthRows = resumenData.filter(r => {
+      if (r[R.ACCOUNT] !== account || r[R.GRAN]?.toLowerCase() !== 'diario') return false;
+      const d = parseDate(r[R.DATE_START]);
+      return d && d >= monthStart && d < today;
+    });
+
+    // Last 7 days rows — may span multiple campaigns per day
     const last7Rows = resumenData.filter(r => {
       if (r[R.ACCOUNT] !== account || r[R.GRAN]?.toLowerCase() !== 'diario') return false;
       const d = parseDate(r[R.DATE_START]);
-      if (!d) return false;
-      const ago7 = new Date(today.getTime() - 7*24*3600*1000);
-      return d >= ago7 && d < today;
+      return d && d >= ago7 && d < today;
     });
 
-    const spendMTD = sumField(monthRows, R.SPEND);
-    const dailyAvg7 = last7Rows.length ? sumField(last7Rows, R.SPEND) / last7Rows.length : (daysPassed > 0 ? spendMTD / daysPassed : 0);
+    const spendMTD   = sumField(monthRows, R.SPEND);
+
+    // Count unique calendar days in last-7 window to get true daily average
+    const uniqueDays7 = new Set(
+      last7Rows.map(r => r[R.DATE_START])
+    ).size;
+    const spend7      = sumField(last7Rows, R.SPEND);
+    // If no last-7 data, fall back to MTD daily average
+    const dailyAvg7   = uniqueDays7 > 0
+      ? spend7 / uniqueDays7
+      : (daysPassed > 1 ? spendMTD / (daysPassed - 1) : 0);
+
+    // Projection = what's already spent + last-7-day pace × remaining days
     const projected = spendMTD + dailyAvg7 * daysLeft;
-    const budget    = account === 'ALAC USA' ? parseNum(document.getElementById('budgetUSA').value) : parseNum(document.getElementById('budgetARG').value);
-    const pct = budget > 0 ? Math.min(projected / budget * 100, 120) : 0;
-    const status = budget <= 0 ? 'neutral' : projected > budget * 1.1 ? 'over' : projected > budget * 0.9 ? 'warn' : 'safe';
+
+    const budget = account === 'ALAC USA'
+      ? parseNum(document.getElementById('budgetUSA').value)
+      : parseNum(document.getElementById('budgetARG').value);
+    const pct    = budget > 0 ? Math.min(projected / budget * 100, 120) : 0;
+    const status = budget <= 0 ? 'neutral'
+      : projected > budget * 1.1 ? 'over'
+      : projected > budget * 0.9 ? 'warn'
+      : 'safe';
     const flag = account === 'ALAC USA' ? '🇺🇸' : '🇦🇷';
 
-    let budgetLine = budget > 0 ?
-      `<div class="prog-label"><span>Proyectado: ${fmt$(projected)}</span><span>Budget: ${fmt$(budget)}</span></div>
-       <div class="prog-bar"><div class="prog-fill ${status}" style="width:${pct}%"></div></div>` : '';
+    // Progress bar label
+    let budgetLine = budget > 0
+      ? `<div class="prog-label">
+           <span>Proyectado: ${fmt$(projected)}</span>
+           <span>Budget: ${fmt$(budget)}</span>
+         </div>
+         <div class="prog-bar"><div class="prog-fill ${status}" style="width:${pct}%"></div></div>`
+      : '';
 
     return `<div class="kpi">
       <div class="kpi-label">${flag} ${account}</div>
       <div class="kpi-value">${fmt$(projected)}</div>
-      <div class="kpi-sub">Gastado: ${fmt$(spendMTD)} | Ritmo: ${fmt$(dailyAvg7,2)}/día</div>
+      <div class="kpi-sub">
+        Gastado: ${fmt$(spendMTD)} · Ritmo últ. 7d: ${fmt$(dailyAvg7, 0)}/día
+      </div>
       <div class="kpi-delta ${status==='over'?'delta-down':status==='warn'?'delta-neutral':'delta-up'}">
-        ${daysPassed} días transcurridos · ${daysLeft} restantes
+        ${daysPassed} días transcurridos · ${daysLeft} restantes en el mes
       </div>
       ${budgetLine}
     </div>`;
