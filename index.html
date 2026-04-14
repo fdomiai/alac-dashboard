@@ -37,6 +37,8 @@
   select:focus, input[type=date]:focus { border-color: var(--primary); }
   .btn-refresh { background: var(--primary); color: white; border: none; font-weight: 600; display: flex; align-items: center; gap: 6px; padding: 0 14px; }
   .btn-refresh:hover { background: #1d4ed8; }
+  .btn-shortcut { background: #f3f4f6; color: var(--text); border: 1px solid var(--border); font-size: 12px; font-weight: 600; height: 32px; padding: 0 10px; border-radius: 7px; }
+  .btn-shortcut:hover { background: var(--primary-light); border-color: var(--primary); color: var(--primary); }
   .date-sep { color: var(--muted); font-size: 13px; }
 
   /* Status bar */
@@ -160,6 +162,9 @@
       <option value="ALAC USA">ALAC USA</option>
       <option value="ALAC ARG">ALAC ARG</option>
     </select>
+    <button class="btn-shortcut" onclick="setShortcut('thisMonth')">Este mes</button>
+    <button class="btn-shortcut" onclick="setShortcut('lastMonth')">Mes anterior</button>
+    <button class="btn-shortcut" onclick="setShortcut('last30')">Últ. 30 días</button>
     <input type="date" id="dateFrom" title="Desde">
     <span class="date-sep">→</span>
     <input type="date" id="dateTo" title="Hasta">
@@ -326,12 +331,36 @@ let chartMode = { spend:'mensual', cv:'mensual', roas:'mensual', cpa:'mensual' }
 let activeCreativeTab = 'all';
 
 // ─── Init ─────────────────────────────────────────────────────────────────
+// Parse a date-picker string (YYYY-MM-DD) as local midnight — consistent with parseDate()
+function localDate(str, endOfDay) {
+  const [y,m,d] = str.split('-').map(Number);
+  const dt = new Date(y, m-1, d);
+  if (endOfDay) dt.setHours(23,59,59,999);
+  return dt;
+}
+
 function initDateDefaults() {
+  // Default: show last full month (mes anterior)
+  setShortcut('lastMonth', /*init*/true);
+}
+
+function setShortcut(type, skipRender) {
   const today = new Date();
-  const y = today.getFullYear(), m = today.getMonth();
-  const from = new Date(y, m - 2, 1);
+  const y = today.getFullYear(), mo = today.getMonth();
+  let from, to;
+  if (type === 'thisMonth') {
+    from = new Date(y, mo, 1);
+    to   = new Date(y, mo+1, 0);   // last day of this month
+  } else if (type === 'lastMonth') {
+    from = new Date(y, mo-1, 1);
+    to   = new Date(y, mo, 0);     // last day of last month
+  } else { // last30
+    from = new Date(today.getTime() - 29*24*3600*1000);
+    to   = today;
+  }
   document.getElementById('dateFrom').value = fmtDate(from);
-  document.getElementById('dateTo').value   = fmtDate(today);
+  document.getElementById('dateTo').value   = fmtDate(to);
+  if (!skipRender && resumenData.length) renderAll();
 }
 
 function loadBudgets() {
@@ -381,13 +410,14 @@ function parseNum(v) {
 
 function parseDate(v) {
   if (!v) return null;
-  // formats: 2/23/2026, 2025-03-01, 2025-03-31
-  let d = new Date(v);
-  if (!isNaN(d)) return d;
-  // try M/D/YYYY
-  const p = v.split('/');
-  if (p.length===3) d = new Date(+p[2], +p[0]-1, +p[1]);
-  return isNaN(d.getTime()) ? null : d;
+  const s = String(v).trim();
+  // ISO: 2026-03-01 → parse as LOCAL midnight (avoids UTC timezone shift)
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return new Date(+iso[1], +iso[2]-1, +iso[3]);
+  // M/D/YYYY or D/M/YYYY
+  const slash = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (slash) return new Date(+slash[3], +slash[1]-1, +slash[2]);
+  return null;
 }
 
 function fmtDate(d) {
@@ -455,7 +485,12 @@ function getFilters() {
   const acc  = document.getElementById('selAccount').value;
   const from = document.getElementById('dateFrom').value;
   const to   = document.getElementById('dateTo').value;
-  return { acc, from: from ? new Date(from) : null, to: to ? new Date(to+'T23:59:59') : null };
+  // Use localDate() so 2026-03-01 = local midnight, not UTC midnight
+  return {
+    acc,
+    from: from ? localDate(from, false) : null,
+    to:   to   ? localDate(to,   true)  : null,
+  };
 }
 
 function filterResumen(gran) {
@@ -562,7 +597,13 @@ function renderKPIs() {
     kpiHtml('Checkouts', Math.round(checkout).toLocaleString(), `iniciados`, null),
   ];
 
-  document.getElementById('kpiTitle').textContent = `KPIs del período${curr.length ? ` (${curr.length} días)` : ''}`;
+  // Show clearly what period is being displayed
+  const {from: f, to: t, acc} = getFilters();
+  const periodLabel = (f && t)
+    ? `${f.toLocaleDateString('es-AR',{day:'2-digit',month:'short',year:'numeric'})} → ${t.toLocaleDateString('es-AR',{day:'2-digit',month:'short',year:'numeric'})}`
+    : 'Período completo';
+  const acctLabel = acc === 'all' ? 'Todas las cuentas' : acc;
+  document.getElementById('kpiTitle').textContent = `KPIs · ${acctLabel} · ${periodLabel}`;
   document.getElementById('kpiGrid').innerHTML = kpis.join('');
   document.getElementById('kpiGrid').style.display = 'grid';
 }
